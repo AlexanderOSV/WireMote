@@ -180,13 +180,13 @@ private fun TrackpadView(
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             Button(
                 modifier = Modifier.weight(1f),
-                onClick = { client.send("mouse.click", JSONObject().apply { put("button", "left") }) }
+                onClick = { client.send("mouse.button", JSONObject().apply { put("button", "left") }) },
             ) {
                 Text("Left Click")
             }
             Button(
                 modifier = Modifier.weight(1f),
-                onClick = { client.send("mouse.click", JSONObject().apply { put("button", "right") }) }
+                onClick = { client.send("mouse.button", JSONObject().apply { put("button", "right") }) },
             ) {
                 Text("Right Click")
             }
@@ -198,17 +198,17 @@ private fun TrackpadView(
             value = keyboardText,
             onValueChange = { currentText ->
                 if (currentText.length > keyboardText.length) {
-                    val typedChar = currentText.last().toString()
-                    client.send("keyboard.type", JSONObject().put("key", typedChar))
+                    val typedText = currentText.drop(keyboardText.length)
+                    client.send("keyboard.text", JSONObject().put("text", typedText))
                 } else if (currentText.length < keyboardText.length) {
-                    client.send("keyboard.press", JSONObject().put("key", "backspace"))
+                    client.send("keyboard.key", JSONObject().put("key", "Backspace"))
                 }
                 keyboardText = currentText
             },
             modifier = Modifier.fillMaxWidth(),
             label = { Text("Type here to send keys...") },
         )
-
+        
         Spacer(Modifier.height(12.dp))
         Text("Mouse sensitivity: %.1fx".format(sensitivity))
         Slider(value = sensitivity, onValueChange = onSensitivityChange, valueRange = 0.25f..3f)
