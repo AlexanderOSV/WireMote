@@ -57,6 +57,10 @@ async fn handle_socket(mut socket: WebSocket) {
 fn handle_message(message: Message) -> Response {
     match message.r#type.as_str() {
         "daemon.status" => Response::status(message.request_id),
+        "system.sleep" => match input::execute_command("sleep") {
+            Ok(()) => Response::result(message.request_id, "system.sleep"),
+            Err(error) => Response::error(message.request_id, &error),
+        },
         "command.execute" => handle_command(message),
         "mouse.move" => handle_input(message, |payload| {
             let dx = payload
