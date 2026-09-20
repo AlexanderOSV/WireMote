@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,6 +14,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -35,12 +38,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import com.myremote.app.data.ProfileStore
 import com.myremote.app.data.RemoteProfile
 import com.myremote.app.network.RemoteClient
 import com.myremote.app.network.WakeOnLan
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import okhttp3.Response
 import okhttp3.WebSocket
@@ -161,15 +169,55 @@ private fun TrackpadView(
                 .fillMaxWidth()
                 .height(220.dp)
                 .pointerInput(sensitivity) {
-                    detectDragGestures { change, dragAmount ->
-                        change.consume()
-                        client.send(
-                            "mouse.move",
-                            JSONObject().apply {
-                                put("dx", dragAmount.x * sensitivity)
-                                put("dy", dragAmount.y * sensitivity)
-                            },
-                        )
+                    coroutineScope {
+                        launch {
+                            awaitPointerEventScope {
+                                while (true) {
+                                    val downEvent = awaitFirstDown(requireUnconsumed = false)
+                                    var maxFingers = 1
+                                    var hasMovedSignificantDistance = false
+                                    val startPos = downEvent.position
+                                    
+                                    // Track multi-touch finger count until all fingers release
+                                    do {
+                                        val event = awaitPointerEvent()
+                                        if (event.changes.size > maxFingers) { maxFingers = event.changes.size }
+                                        
+                                        // Check if any active pointer drifted away from the origin landing spot
+                                        event.changes.forEach { change ->
+                                            val distance = (change.position - startPos).getDistance()
+                                            if (distance > 15f) {
+                                                hasMovedSignificantDistance = true
+                                            }
+                                        }
+                                        val anyFingerDown = event.changes.any { it.pressed }
+                                    } while (anyFingerDown)
+                                    
+                                    val duration = System.currentTimeMillis() - downEvent.uptimeMillis
+                                    
+                                    // Only execute a click if the gesture was fast and stationary
+                                    if (duration < 220 && !hasMovedSignificantDistance) {
+                                        if (maxFingers == 1) {
+                                            client.send("mouse.button", JSONObject().apply { put("button", "left") })
+                                        } else if (maxFingers == 2) {
+                                            client.send("mouse.button", JSONObject().apply { put("button", "right") })
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        launch {
+                            detectDragGestures { change, dragAmount ->
+                                change.consume()
+                                client.send(
+                                    "mouse.move",
+                                    JSONObject().apply {
+                                        put("dx", dragAmount.x * sensitivity)
+                                        put("dy", dragAmount.y * sensitivity)
+                                    },
+                                )
+                            }
+                        }
                     }
                 },
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -193,20 +241,43 @@ private fun TrackpadView(
         }
 
         Spacer(Modifier.height(12.dp))
-        var keyboardText by remember { mutableStateOf("") }
+        var textFieldState by remember { 
+            mutableStateOf(TextFieldValue(text = " ", selection = TextRange(1)))
+        }
+        val keyboardController = LocalSoftwareKeyboardController.current
         TextField(
-            value = keyboardText,
-            onValueChange = { currentText ->
-                if (currentText.length > keyboardText.length) {
-                    val typedText = currentText.drop(keyboardText.length)
-                    client.send("keyboard.text", JSONObject().put("text", typedText))
-                } else if (currentText.length < keyboardText.length) {
-                    client.send("keyboard.key", JSONObject().put("key", "Backspace"))
+            value = textFieldState,
+            onValueChange = { newState ->
+                val currentText = newState.text
+                val oldText = textFieldState.text
+                
+                if (currentText.contains("\n")) {
+                    client.send("keyboard.key", JSONObject().apply { put("key", "Enter") })
+                    keyboardController?.hide()
+                    textFieldState = TextFieldValue(text = " ", selection = TextRange(1))
+                } else if (currentText.length > oldText.length) {
+                    val typedText = currentText.substring(oldText.length)
+                    client.send("keyboard.text", JSONObject().apply { put("text", typedText) })
+                    textFieldState = TextFieldValue(text = " ", selection = TextRange(1))
+                } else if (currentText.length < oldText.length || currentText.isEmpty()) {
+                    client.send("keyboard.key", JSONObject().apply { put("key", "Backspace") })
+                    textFieldState = TextFieldValue(text = " ", selection = TextRange(1))
+                } else {
+                    textFieldState = newState
                 }
-                keyboardText = currentText
             },
             modifier = Modifier.fillMaxWidth(),
             label = { Text("Type here to send keys...") },
+            keyboardOptions = KeyboardOptions(
+                imeAction = ImeAction.Done,
+            ),
+            keyboardActions = KeyboardActions(
+                onDone = {
+                    client.send("keyboard.key", JSONObject().apply { put("key", "Enter") })
+                    keyboardController?.hide()
+                    textFieldState = TextFieldValue(text = " ", selection = TextRange(1))
+                },
+            ),
         )
         
         Spacer(Modifier.height(12.dp))
