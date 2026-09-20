@@ -91,7 +91,15 @@ fn handle_message(message: Message) -> Response {
             input::keyboard_key(key, direction)
         }),
         "remote.dpad" => handle_input(message, input::remote_dpad),
-        "pair.begin" | "pair.confirm" | "remote.select" | "remote.back" | "remote.play_pause" => {
+        "remote.select" => match input::remote_select() {
+            Ok(()) => Response::result(message.request_id, "remote.select"),
+            Err(error) => Response::error(message.request_id, &error),
+        },
+        "remote.back" => match input::remote_back() {
+            Ok(()) => Response::result(message.request_id, "remote.back"),
+            Err(error) => Response::error(message.request_id, &error),
+        },
+        "pair.begin" | "pair.confirm" | "remote.play_pause" => {
             Response::error(message.request_id, "adapter not configured")
         }
         _ => Response::error(message.request_id, "unsupported message type"),

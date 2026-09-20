@@ -86,6 +86,14 @@ pub fn remote_dpad(payload: &Value) -> Result<(), String> {
     keyboard_key(key, "click")
 }
 
+pub fn remote_select() -> Result<(), String> {
+    mouse_button(&serde_json::json!({ "button": "left" }))
+}
+
+pub fn remote_back() -> Result<(), String> {
+    mouse_button(&serde_json::json!({ "button": "right" }))
+}
+
 pub fn execute_command(command_id: &str) -> Result<(), String> {
     let (program, args): (&str, &[&str]) = match command_id {
         "sleep" => ("systemctl", &["suspend"]),
