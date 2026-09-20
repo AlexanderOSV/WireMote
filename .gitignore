@@ -1,0 +1,13 @@
+# Rust
+linux-daemon/target/
+
+# Android
+android/.gradle/
+android/**/build/
+android/local.properties
+android/.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db

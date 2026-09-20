@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/my-remote/protocol/0.1/schema.json",
+  "title": "My Remote message envelope",
+  "type": "object",
+  "required": ["type"],
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": [
+        "pair.begin",
+        "pair.confirm",
+        "mouse.move",
+        "mouse.button",
+        "mouse.scroll",
+        "keyboard.text",
+        "keyboard.key",
+        "remote.dpad",
+        "remote.select",
+        "remote.back",
+        "remote.play_pause",
+        "command.execute",
+        "command.result",
+        "daemon.status",
+        "error"
+      ]
+    },
+    "request_id": { "type": "string", "maxLength": 128 },
+    "payload": { "type": "object" }
+  },
+  "additionalProperties": false
+}
