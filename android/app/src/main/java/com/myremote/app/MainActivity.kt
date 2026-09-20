@@ -28,8 +28,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
@@ -51,7 +55,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.zIndex
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.input.pointer.pointerInput
@@ -86,6 +89,7 @@ import com.myremote.app.network.WakeOnLan
 import com.myremote.app.ui.MyRemoteTheme
 import com.myremote.app.ui.icons.PowerSettingsNew
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -161,40 +165,75 @@ private fun RemoteApp() {
         }
     }
 
+    fun wakeAndReconnect(profile: RemoteProfile) {
+        scope.launch(Dispatchers.IO) {
+            profile.macAddress?.let { WakeOnLan.wake(it, profile.broadcastAddress) }
+            delay(5000)
+            withContext(Dispatchers.Main) {
+                if (selectedProfileId == profile.id) connect()
+            }
+        }
+    }
+
+    LaunchedEffect(selectedProfile?.id) {
+        if (selectedProfile != null && connectionState == "Disconnected") {
+            connect()
+        }
+    }
+
     Scaffold { padding ->
         Column(Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                TextButton(onClick = { selectedTab = 0 }) { Text("Trackpad") }
-                TextButton(onClick = { selectedTab = 1 }) { Text("Remote") }
-                TextButton(onClick = { selectedTab = 2 }) { Text("Settings") }
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(24.dp),
+            ) {
+                IconButton(onClick = { selectedTab = 0 }) {
+                    Icon(
+                        painter = painterResource(com.myremote.app.R.drawable.mouse_24),
+                        contentDescription = "Trackpad",
+                    )
+                }
+                IconButton(onClick = { selectedTab = 1 }) {
+                    Icon(
+                        painter = painterResource(com.myremote.app.R.drawable.tv_remote_24),
+                        contentDescription = "Remote",
+                    )
+                }
+                IconButton(onClick = { selectedTab = 2 }) {
+                    Icon(
+                        painter = painterResource(com.myremote.app.R.drawable.settings_24),
+                        contentDescription = "Settings",
+                    )
+                }
+                Spacer(Modifier.weight(1f))
+                IconButton(
+                    onClick = {
+                        if (connectionState == "Connected") {
+                            client.send("system.sleep")
+                            connectionState = "Disconnected"
+                        } else {
+                            selectedProfile?.let(::wakeAndReconnect)
+                        }
+                    },
+                    enabled = selectedProfile != null,
+                ) {
+                    Icon(
+                        imageVector = PowerSettingsNew,
+                        contentDescription = if (connectionState == "Connected") "Sleep" else "Wake",
+                    )
+                }
             }
             when (selectedTab) {
                 0 -> TrackpadView(
                     profile = selectedProfile,
                     connectionState = connectionState,
                     client = client,
-                    onSleep = {
-                        client.send("system.sleep")
-                        connectionState = "Disconnected"
-                    },
-                ) { profile ->
-                    scope.launch(Dispatchers.IO) {
-                        profile.macAddress?.let { WakeOnLan.wake(it, profile.broadcastAddress) }
-                    }
-                }
+                )
                 1 -> RemoteView(
                     profile = selectedProfile,
                     connectionState = connectionState,
                     client = client,
-                    onSleep = {
-                        client.send("system.sleep")
-                        connectionState = "Disconnected"
-                    },
-                ) { profile ->
-                    scope.launch(Dispatchers.IO) {
-                        profile.macAddress?.let { WakeOnLan.wake(it, profile.broadcastAddress) }
-                    }
-                }
+                )
                 2 -> SettingsView(
                     profile = selectedProfile,
                     connectionState = connectionState,
@@ -251,12 +290,10 @@ private fun TrackpadView(
     profile: RemoteProfile?,
     connectionState: String,
     client: RemoteClient,
-    onSleep: () -> Unit,
-    onWake: (RemoteProfile) -> Unit,
 ) {
     val sensitivity = profile?.mouseSensitivity ?: 1f
     Column {
-        ConnectionBar(profile, connectionState, onSleep, onWake)
+        ConnectionBar(profile, connectionState)
         Spacer(Modifier.height(12.dp))
         Row(
             Modifier
@@ -418,8 +455,6 @@ private fun TrackpadView(
 private fun ConnectionBar(
     profile: RemoteProfile?,
     connectionState: String,
-    onSleep: () -> Unit,
-    onWake: (RemoteProfile) -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -439,17 +474,6 @@ private fun ConnectionBar(
                 ),
         )
         Spacer(Modifier.weight(1f))
-        IconButton(
-            onClick = {
-                if (connectionState == "Connected") onSleep() else profile?.let(onWake)
-            },
-            enabled = profile != null,
-        ) {
-            Icon(
-                imageVector = PowerSettingsNew,
-                contentDescription = if (connectionState == "Connected") "Sleep" else "Wake",
-            )
-        }
     }
 }
 
@@ -471,7 +495,7 @@ private fun SettingsView(
     Column(
         modifier = Modifier.verticalScroll(rememberScrollState()),
     ) {
-        Text("Settings", style = MaterialTheme.typography.headlineSmall)
+        ConnectionBar(profile, connectionState)
         Spacer(Modifier.height(12.dp))
         Text("Mouse sensitivity: %.1fx".format(profile?.mouseSensitivity ?: 1f))
         Slider(
@@ -508,8 +532,6 @@ private fun RemoteView(
     profile: RemoteProfile?,
     connectionState: String,
     client: RemoteClient,
-    onSleep: () -> Unit,
-    onWake: (RemoteProfile) -> Unit,
 ) {
     var textFieldState by remember {
         mutableStateOf(TextFieldValue(text = " ", selection = TextRange(1)))
@@ -517,7 +539,7 @@ private fun RemoteView(
     val keyboardController = LocalSoftwareKeyboardController.current
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        ConnectionBar(profile, connectionState, onSleep, onWake)
+        ConnectionBar(profile, connectionState)
         Spacer(Modifier.height(12.dp))
         Spacer(Modifier.height(72.dp))
         Box(
@@ -702,7 +724,7 @@ private fun RemoteView(
 @Composable
 private fun RemotePreview() {
     MyRemoteTheme {
-        RemoteView(null, "Disconnected", RemoteClient(), {}, {})
+        RemoteView(null, "Disconnected", RemoteClient())
     }
 }
 
@@ -739,19 +761,7 @@ private fun HoldKeyButton(
     ) {
         Box(
             Modifier
-                .fillMaxSize()
-                .drawBehind {
-                    val hitboxPath = shape.path(Size(size.width, size.height))
-                    drawPath(
-                        path = hitboxPath,
-                        color = Color.Red.copy(alpha = 0.18f),
-                    )
-                    drawPath(
-                        path = hitboxPath,
-                        color = Color.Red,
-                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx()),
-                    )
-                },
+                .fillMaxSize(),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
@@ -890,6 +900,7 @@ private fun ProfilesView(
 ) {
     var editingId by remember { mutableStateOf<String?>(null) }
     var expandedProfileId by remember { mutableStateOf<String?>(null) }
+    var pendingDelete by remember { mutableStateOf<RemoteProfile?>(null) }
     var name by remember { mutableStateOf("") }
     var host by remember { mutableStateOf("") }
     var port by remember { mutableStateOf("39394") }
@@ -931,8 +942,12 @@ private fun ProfilesView(
                     Text(if (profile.id == selectedProfileId) "* ${profile.name}" else profile.name)
                 }
                 Spacer(Modifier.weight(1f))
-                TextButton(onClick = { loadProfile(profile) }) { Text("Edit") }
-                TextButton(onClick = { onDelete(profile.id) }) { Text("Delete") }
+                IconButton(onClick = { loadProfile(profile) }) {
+                    Icon(Icons.Filled.Edit, contentDescription = "Edit ${profile.name}")
+                }
+                IconButton(onClick = { pendingDelete = profile }) {
+                    Icon(Icons.Filled.Delete, contentDescription = "Delete ${profile.name}")
+                }
             }
             if (expandedProfileId == profile.id) {
                 Text(
@@ -978,6 +993,24 @@ private fun ProfilesView(
         }
         Spacer(Modifier.height(12.dp))
         TextButton(onClick = onAddRequested) { Text("+ profile") }
+    }
+    pendingDelete?.let { profile ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("Delete profile?") },
+            text = { Text("Remove ${profile.name} from this device?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDelete(profile.id)
+                        pendingDelete = null
+                    },
+                ) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) { Text("Cancel") }
+            },
+        )
     }
 }
 
