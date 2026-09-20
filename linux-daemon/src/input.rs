@@ -55,6 +55,10 @@ pub fn keyboard_key(key: &str, direction: &str) -> Result<(), String> {
         "Backspace" => Key::Backspace,
         "Tab" => Key::Tab,
         "Space" => Key::Space,
+        "ArrowUp" => Key::UpArrow,
+        "ArrowDown" => Key::DownArrow,
+        "ArrowLeft" => Key::LeftArrow,
+        "ArrowRight" => Key::RightArrow,
         value => value
             .chars()
             .next()
@@ -69,6 +73,17 @@ pub fn keyboard_key(key: &str, direction: &str) -> Result<(), String> {
     };
     let mut enigo = Enigo::new(&Settings::default()).map_err(|error| error.to_string())?;
     enigo.key(key, direction).map_err(|error| error.to_string())
+}
+
+pub fn remote_dpad(payload: &Value) -> Result<(), String> {
+    let key = match payload.get("direction").and_then(Value::as_str) {
+        Some("up") => "ArrowUp",
+        Some("down") => "ArrowDown",
+        Some("left") => "ArrowLeft",
+        Some("right") => "ArrowRight",
+        _ => return Err("direction must be up, down, left, or right".to_string()),
+    };
+    keyboard_key(key, "click")
 }
 
 pub fn execute_command(command_id: &str) -> Result<(), String> {

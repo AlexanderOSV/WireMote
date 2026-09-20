@@ -4,7 +4,7 @@ import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -48,7 +48,6 @@ import com.myremote.app.data.RemoteProfile
 import com.myremote.app.network.RemoteClient
 import com.myremote.app.network.WakeOnLan
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import okhttp3.Response
 import okhttp3.WebSocket
@@ -169,53 +168,56 @@ private fun TrackpadView(
                 .fillMaxWidth()
                 .height(220.dp)
                 .pointerInput(sensitivity) {
-                    coroutineScope {
-                        launch {
-                            awaitPointerEventScope {
-                                while (true) {
-                                    val downEvent = awaitFirstDown(requireUnconsumed = false)
-                                    var maxFingers = 1
-                                    var hasMovedSignificantDistance = false
-                                    val startPos = downEvent.position
-                                    
-                                    // Track multi-touch finger count until all fingers release
-                                    do {
-                                        val event = awaitPointerEvent()
-                                        if (event.changes.size > maxFingers) { maxFingers = event.changes.size }
-                                        
-                                        // Check if any active pointer drifted away from the origin landing spot
-                                        event.changes.forEach { change ->
-                                            val distance = (change.position - startPos).getDistance()
-                                            if (distance > 15f) {
-                                                hasMovedSignificantDistance = true
-                                            }
-                                        }
-                                        val anyFingerDown = event.changes.any { it.pressed }
-                                    } while (anyFingerDown)
-                                    
-                                    val duration = System.currentTimeMillis() - downEvent.uptimeMillis
-                                    
-                                    // Only execute a click if the gesture was fast and stationary
-                                    if (duration < 220 && !hasMovedSignificantDistance) {
-                                        if (maxFingers == 1) {
-                                            client.send("mouse.button", JSONObject().apply { put("button", "left") })
-                                        } else if (maxFingers == 2) {
-                                            client.send("mouse.button", JSONObject().apply { put("button", "right") })
-                                        }
+                    awaitEachGesture {
+                        val downEvent = awaitFirstDown(requireUnconsumed = false)
+                        var maxFingers = 1
+                        var hasMovedSignificantDistance = false
+                        var previousPosition = downEvent.position
+                        val activePointerIds = mutableSetOf(downEvent.id)
+
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            event.changes.forEach { change ->
+                                if (change.pressed) {
+                                    activePointerIds.add(change.id)
+                                } else {
+                                    activePointerIds.remove(change.id)
+                                }
+                            }
+                            maxFingers = maxOf(maxFingers, activePointerIds.size)
+                            val primaryChange = event.changes.firstOrNull { it.id == downEvent.id }
+
+                            if (primaryChange != null) {
+                                val delta = primaryChange.position - previousPosition
+                                previousPosition = primaryChange.position
+                                if (delta.getDistance() > 0f) {
+                                    if (delta.getDistance() > 15f) {
+                                        hasMovedSignificantDistance = true
+                                    }
+                                    if (hasMovedSignificantDistance) {
+                                        primaryChange.consume()
+                                        client.send(
+                                            "mouse.move",
+                                            JSONObject().apply {
+                                                put("dx", delta.x * sensitivity)
+                                                put("dy", delta.y * sensitivity)
+                                            },
+                                        )
                                     }
                                 }
                             }
+
+                            if (activePointerIds.isEmpty()) break
                         }
-                        launch {
-                            detectDragGestures { change, dragAmount ->
-                                change.consume()
-                                client.send(
-                                    "mouse.move",
-                                    JSONObject().apply {
-                                        put("dx", dragAmount.x * sensitivity)
-                                        put("dy", dragAmount.y * sensitivity)
-                                    },
-                                )
+
+                        if (!hasMovedSignificantDistance) {
+                            val button = when (maxFingers) {
+                                1 -> "left"
+                                2 -> "right"
+                                else -> null
+                            }
+                            button?.let {
+                                client.send("mouse.button", JSONObject().apply { put("button", it) })
                             }
                         }
                     }
@@ -223,7 +225,7 @@ private fun TrackpadView(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) { Text("Touch area") }
-        
+
         Spacer(Modifier.height(8.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             Button(
@@ -241,7 +243,7 @@ private fun TrackpadView(
         }
 
         Spacer(Modifier.height(12.dp))
-        var textFieldState by remember { 
+        var textFieldState by remember {
             mutableStateOf(TextFieldValue(text = " ", selection = TextRange(1)))
         }
         val keyboardController = LocalSoftwareKeyboardController.current
@@ -250,7 +252,7 @@ private fun TrackpadView(
             onValueChange = { newState ->
                 val currentText = newState.text
                 val oldText = textFieldState.text
-                
+
                 if (currentText.contains("\n")) {
                     client.send("keyboard.key", JSONObject().apply { put("key", "Enter") })
                     keyboardController?.hide()
@@ -279,7 +281,7 @@ private fun TrackpadView(
                 },
             ),
         )
-        
+
         Spacer(Modifier.height(12.dp))
         Text("Mouse sensitivity: %.1fx".format(sensitivity))
         Slider(value = sensitivity, onValueChange = onSensitivityChange, valueRange = 0.25f..3f)
@@ -292,8 +294,10 @@ private fun RemoteView(client: RemoteClient) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Button(onClick = { client.send("remote.dpad", JSONObject().put("direction", "up")) }) { Text("Up") }
         Row(verticalAlignment = Alignment.CenterVertically) {
+            Button(onClick = { client.send("remote.dpad", JSONObject().put("direction", "left")) }) { Text("Left") }
             Button(onClick = { client.send("remote.back") }) { Text("Back") }
             Button(onClick = { client.send("remote.select") }) { Text("OK") }
+            Button(onClick = { client.send("remote.dpad", JSONObject().put("direction", "right")) }) { Text("Right") }
             Button(onClick = { client.send("remote.play_pause") }) { Text("Play / Pause") }
         }
         Button(onClick = { client.send("remote.dpad", JSONObject().put("direction", "down")) }) { Text("Down") }

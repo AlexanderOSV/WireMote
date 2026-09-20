@@ -90,8 +90,10 @@ fn handle_message(message: Message) -> Response {
             let direction = payload.get("direction").and_then(Value::as_str).unwrap_or("click");
             input::keyboard_key(key, direction)
         }),
-        "pair.begin" | "pair.confirm" | "remote.dpad" | "remote.select" | "remote.back"
-        | "remote.play_pause" => Response::error(message.request_id, "adapter not configured"),
+        "remote.dpad" => handle_input(message, input::remote_dpad),
+        "pair.begin" | "pair.confirm" | "remote.select" | "remote.back" | "remote.play_pause" => {
+            Response::error(message.request_id, "adapter not configured")
+        }
         _ => Response::error(message.request_id, "unsupported message type"),
     }
 }
