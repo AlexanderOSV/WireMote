@@ -10,12 +10,15 @@ use axum::{
 use protocol::{is_allowed_command, Message, Response};
 use serde_json::Value;
 use std::net::SocketAddr;
+use std::time::Duration;
 use tower_http::trace::TraceLayer;
 use tracing::{info, warn};
 
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
+
+    tokio::spawn(discovery_broadcast());
 
     let app = Router::new()
         .route("/health", get(health))
@@ -26,6 +29,73 @@ async fn main() {
     info!(?address, "my-remote daemon listening");
     let listener = tokio::net::TcpListener::bind(address).await.expect("bind daemon port");
     axum::serve(listener, app).await.expect("serve daemon");
+}
+
+async fn discovery_broadcast() {
+    let socket = match tokio::net::UdpSocket::bind("0.0.0.0:39393").await {
+        Ok(socket) => socket,
+        Err(error) => {
+            warn!(%error, "could not bind discovery socket");
+            return;
+        }
+    };
+    if let Err(error) = socket.set_broadcast(true) {
+        warn!(%error, "could not enable discovery broadcast");
+        return;
+    }
+
+    let host = match std::net::UdpSocket::bind("0.0.0.0:0")
+        .and_then(|socket| {
+            socket.connect("8.8.8.8:80")?;
+            socket.local_addr()
+        }) {
+        Ok(address) => address.ip().to_string(),
+        Err(error) => {
+            warn!(%error, "could not determine discovery host address");
+            return;
+        }
+    };
+    let name = std::env::var("HOSTNAME").unwrap_or_else(|_| "my-remote-pc".to_string());
+    let advertisement = serde_json::json!({
+        "service": "my-remote",
+        "version": 1,
+        "name": name,
+        "host": host,
+        "port": 39394,
+    }).to_string();
+    let destination = SocketAddr::from(([255, 255, 255, 255], 39393));
+    let mut interval = tokio::time::interval(Duration::from_secs(5));
+
+    let mut buffer = [0u8; 1024];
+    loop {
+        tokio::select! {
+            result = interval.tick() => {
+                let _ = result;
+                if let Err(error) = socket.send_to(advertisement.as_bytes(), destination).await {
+                    warn!(%error, "discovery broadcast failed");
+                }
+            }
+            result = socket.recv_from(&mut buffer) => {
+                match result {
+                    Ok((length, address)) => {
+                        let is_probe = serde_json::from_slice::<serde_json::Value>(&buffer[..length])
+                            .map(|message| {
+                                message.get("service").and_then(Value::as_str) == Some("my-remote")
+                                    && message.get("version").and_then(Value::as_i64) == Some(1)
+                                    && message.get("action").and_then(Value::as_str) == Some("discover")
+                            })
+                            .unwrap_or(false);
+                        if is_probe {
+                            if let Err(error) = socket.send_to(advertisement.as_bytes(), address).await {
+                                warn!(%error, "discovery response failed");
+                            }
+                        }
+                    }
+                    Err(error) => warn!(%error, "discovery receive failed"),
+                }
+            }
+        }
+    }
 }
 
 async fn health() -> impl IntoResponse {

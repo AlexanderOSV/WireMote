@@ -23,6 +23,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
@@ -78,11 +80,14 @@ import androidx.compose.ui.unit.LayoutDirection
 import com.myremote.app.data.ProfileStore
 import com.myremote.app.data.RemoteProfile
 import com.myremote.app.network.RemoteClient
+import com.myremote.app.network.DiscoveredDevice
+import com.myremote.app.network.Discovery
 import com.myremote.app.network.WakeOnLan
 import com.myremote.app.ui.MyRemoteTheme
 import com.myremote.app.ui.icons.PowerSettingsNew
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Response
 import okhttp3.WebSocket
@@ -161,8 +166,7 @@ private fun RemoteApp() {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                 TextButton(onClick = { selectedTab = 0 }) { Text("Trackpad") }
                 TextButton(onClick = { selectedTab = 1 }) { Text("Remote") }
-                TextButton(onClick = { selectedTab = 2 }) { Text("Profiles") }
-                TextButton(onClick = { selectedTab = 3 }) { Text("Settings") }
+                TextButton(onClick = { selectedTab = 2 }) { Text("Settings") }
             }
             when (selectedTab) {
                 0 -> TrackpadView(
@@ -191,26 +195,52 @@ private fun RemoteApp() {
                         profile.macAddress?.let { WakeOnLan.wake(it, profile.broadcastAddress) }
                     }
                 }
-                2 -> ProfilesView(
-                    profiles = profiles,
-                    selectedProfileId = selectedProfile?.id,
-                    connectionState = connectionState,
-                    onSelect = { selectedProfileId = it },
-                    onConnect = ::connect,
-                ) { profile -> scope.launch { store.saveProfiles(profiles + profile) } }
-                3 -> SettingsView(
+                2 -> SettingsView(
                     profile = selectedProfile,
+                    connectionState = connectionState,
                     onSensitivityChange = { updated ->
                         selectedProfile?.let { saveProfile(it.copy(mouseSensitivity = updated)) }
                     },
-                )
-                else -> ProfilesView(
                     profiles = profiles,
                     selectedProfileId = selectedProfile?.id,
-                    connectionState = connectionState,
                     onSelect = { selectedProfileId = it },
                     onConnect = ::connect,
-                ) { profile -> scope.launch { store.saveProfiles(profiles + profile) } }
+                    onAddProfile = { profile ->
+                        selectedProfileId = profile.id
+                        scope.launch { store.saveProfiles(profiles + profile) }
+                    },
+                    onUpdateProfile = { updated ->
+                        scope.launch { store.saveProfiles(profiles.map { if (it.id == updated.id) updated else it }) }
+                    },
+                    onDeleteProfile = { id ->
+                        val remaining = profiles.filterNot { it.id == id }
+                        selectedProfileId = remaining.firstOrNull()?.id
+                        scope.launch { store.saveProfiles(remaining) }
+                    },
+                )
+                else -> SettingsView(
+                    profile = selectedProfile,
+                    connectionState = connectionState,
+                    onSensitivityChange = { updated ->
+                        selectedProfile?.let { saveProfile(it.copy(mouseSensitivity = updated)) }
+                    },
+                    profiles = profiles,
+                    selectedProfileId = selectedProfile?.id,
+                    onSelect = { selectedProfileId = it },
+                    onConnect = ::connect,
+                    onAddProfile = { profile ->
+                        selectedProfileId = profile.id
+                        scope.launch { store.saveProfiles(profiles + profile) }
+                    },
+                    onUpdateProfile = { updated ->
+                        scope.launch { store.saveProfiles(profiles.map { if (it.id == updated.id) updated else it }) }
+                    },
+                    onDeleteProfile = { id ->
+                        val remaining = profiles.filterNot { it.id == id }
+                        selectedProfileId = remaining.firstOrNull()?.id
+                        scope.launch { store.saveProfiles(remaining) }
+                    },
+                )
             }
         }
     }
@@ -426,9 +456,21 @@ private fun ConnectionBar(
 @Composable
 private fun SettingsView(
     profile: RemoteProfile?,
+    connectionState: String,
     onSensitivityChange: (Float) -> Unit,
+    profiles: List<RemoteProfile>,
+    selectedProfileId: String?,
+    onSelect: (String) -> Unit,
+    onConnect: () -> Unit,
+    onAddProfile: (RemoteProfile) -> Unit,
+    onUpdateProfile: (RemoteProfile) -> Unit,
+    onDeleteProfile: (String) -> Unit,
 ) {
-    Column {
+    var addingProfile by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier.verticalScroll(rememberScrollState()),
+    ) {
         Text("Settings", style = MaterialTheme.typography.headlineSmall)
         Spacer(Modifier.height(12.dp))
         Text("Mouse sensitivity: %.1fx".format(profile?.mouseSensitivity ?: 1f))
@@ -437,6 +479,27 @@ private fun SettingsView(
             onValueChange = onSensitivityChange,
             valueRange = 0.25f..3f,
         )
+        Spacer(Modifier.height(24.dp))
+        if (addingProfile) {
+            AddProfileView(
+                onBack = { addingProfile = false },
+                onAdd = {
+                    onAddProfile(it)
+                    addingProfile = false
+                },
+            )
+        } else {
+            ProfilesView(
+                profiles = profiles,
+                selectedProfileId = selectedProfileId,
+                connectionState = connectionState,
+                onSelect = onSelect,
+                onConnect = onConnect,
+                onUpdate = onUpdateProfile,
+                onDelete = onDeleteProfile,
+                onAddRequested = { addingProfile = true },
+            )
+        }
     }
 }
 
@@ -821,40 +884,180 @@ private fun ProfilesView(
     connectionState: String,
     onSelect: (String) -> Unit,
     onConnect: () -> Unit,
-    onAdd: (RemoteProfile) -> Unit,
+    onUpdate: (RemoteProfile) -> Unit,
+    onDelete: (String) -> Unit,
+    onAddRequested: () -> Unit,
 ) {
+    var editingId by remember { mutableStateOf<String?>(null) }
+    var expandedProfileId by remember { mutableStateOf<String?>(null) }
     var name by remember { mutableStateOf("") }
     var host by remember { mutableStateOf("") }
+    var port by remember { mutableStateOf("39394") }
     var mac by remember { mutableStateOf("") }
+    var broadcast by remember { mutableStateOf("255.255.255.255") }
+
+    fun loadProfile(profile: RemoteProfile) {
+        editingId = profile.id
+        name = profile.name
+        host = profile.host
+        port = profile.port.toString()
+        mac = profile.macAddress.orEmpty()
+        broadcast = profile.broadcastAddress
+    }
+
+    fun clearForm() {
+        editingId = null
+        name = ""
+        host = ""
+        port = "39394"
+        mac = ""
+        broadcast = "255.255.255.255"
+    }
+
     Column {
         Text("PC profiles", style = MaterialTheme.typography.headlineSmall)
         profiles.forEach { profile ->
-            TextButton(onClick = { onSelect(profile.id) }) {
-                Text(if (profile.id == selectedProfileId) "* ${profile.name}" else profile.name)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(
+                    onClick = {
+                        onSelect(profile.id)
+                        expandedProfileId =
+                            if (expandedProfileId == profile.id) null else profile.id
+                    },
+                ) {
+                    Text(if (profile.id == selectedProfileId) "* ${profile.name}" else profile.name)
+                }
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = { loadProfile(profile) }) { Text("Edit") }
+                TextButton(onClick = { onDelete(profile.id) }) { Text("Delete") }
+            }
+            if (expandedProfileId == profile.id) {
+                Text(
+                    "Host: ${profile.host}:${profile.port}\n" +
+                        "MAC: ${profile.macAddress ?: "Not set"}\n" +
+                        "Broadcast: ${profile.broadcastAddress}",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(start = 12.dp, bottom = 8.dp),
+                )
             }
         }
         Text(connectionState)
         Button(onClick = onConnect, enabled = selectedProfileId != null) { Text("Connect") }
+        if (editingId != null) {
+            Spacer(Modifier.height(12.dp))
+            Text("Edit profile", style = MaterialTheme.typography.titleMedium)
+            TextField(value = name, onValueChange = { name = it }, label = { Text("PC name") })
+            TextField(value = host, onValueChange = { host = it }, label = { Text("IP address") })
+            TextField(value = port, onValueChange = { port = it }, label = { Text("Port") })
+            TextField(value = mac, onValueChange = { mac = it }, label = { Text("MAC address (optional)") })
+            TextField(value = broadcast, onValueChange = { broadcast = it }, label = { Text("Broadcast address") })
+            Button(
+                onClick = {
+                    val parsedPort = port.toIntOrNull()
+                    if (name.isNotBlank() && host.isNotBlank() && parsedPort != null) {
+                        onUpdate(
+                            RemoteProfile(
+                                id = editingId!!,
+                                name = name,
+                                host = host,
+                                port = parsedPort,
+                                macAddress = mac.ifBlank { null },
+                                broadcastAddress = broadcast,
+                            ),
+                        )
+                        clearForm()
+                    }
+                },
+            ) { Text("Save changes") }
+        }
+        if (editingId != null) {
+            TextButton(onClick = ::clearForm) { Text("Cancel") }
+        }
         Spacer(Modifier.height(12.dp))
-        TextField(value = name, onValueChange = { name = it }, label = { Text("PC name") })
-        TextField(value = host, onValueChange = { host = it }, label = { Text("IP address") })
-        TextField(value = mac, onValueChange = { mac = it }, label = { Text("MAC address (optional)") })
+        TextButton(onClick = onAddRequested) { Text("+ profile") }
+    }
+}
+
+@Composable
+private fun AddProfileView(
+    onBack: () -> Unit,
+    onAdd: (RemoteProfile) -> Unit,
+) {
+    val context = LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var discoveredDevices by remember { mutableStateOf<List<DiscoveredDevice>>(emptyList()) }
+    var discovering by remember { mutableStateOf(false) }
+    var name by remember { mutableStateOf("") }
+    var host by remember { mutableStateOf("") }
+    var port by remember { mutableStateOf("39394") }
+    var mac by remember { mutableStateOf("") }
+    var broadcast by remember { mutableStateOf("255.255.255.255") }
+
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = onBack) { Text("Back") }
+            Text("Add profile", style = MaterialTheme.typography.titleMedium)
+        }
+        Text("Automatic", style = MaterialTheme.typography.titleSmall)
         Button(
             onClick = {
-                if (name.isNotBlank() && host.isNotBlank()) {
+                discovering = true
+                scope.launch(Dispatchers.IO) {
+                    val devices = Discovery.listen(context)
+                    withContext(Dispatchers.Main) {
+                        discoveredDevices = devices
+                        discovering = false
+                    }
+                }
+            },
+            enabled = !discovering,
+        ) {
+            Text(if (discovering) "Scanning..." else "Detect PCs")
+        }
+        discoveredDevices.forEach { device ->
+            TextButton(
+                onClick = {
+                    onAdd(
+                        RemoteProfile(
+                            id = UUID.randomUUID().toString(),
+                            name = device.name,
+                            host = device.host,
+                            port = device.port,
+                        ),
+                    )
+                },
+            ) {
+                Text("${device.name} (${device.host}:${device.port})")
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Text("Manual", style = MaterialTheme.typography.titleSmall)
+        TextField(value = name, onValueChange = { name = it }, label = { Text("PC name") })
+        TextField(value = host, onValueChange = { host = it }, label = { Text("IP address") })
+        TextField(value = port, onValueChange = { port = it }, label = { Text("Port") })
+        TextField(value = mac, onValueChange = { mac = it }, label = { Text("MAC address (optional)") })
+        TextField(value = broadcast, onValueChange = { broadcast = it }, label = { Text("Broadcast address") })
+        Button(
+            onClick = {
+                val parsedPort = port.toIntOrNull()
+                if (name.isNotBlank() && host.isNotBlank() && parsedPort != null) {
                     onAdd(
                         RemoteProfile(
                             id = UUID.randomUUID().toString(),
                             name = name,
                             host = host,
+                            port = parsedPort,
                             macAddress = mac.ifBlank { null },
+                            broadcastAddress = broadcast,
                         ),
                     )
-                    name = ""
-                    host = ""
-                    mac = ""
                 }
             },
-        ) { Text("Add PC") }
+        ) {
+            Text("Add profile")
+        }
     }
 }
