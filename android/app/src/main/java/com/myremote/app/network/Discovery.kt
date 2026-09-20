@@ -16,7 +16,7 @@ data class DiscoveredDevice(
 object Discovery {
     private const val discoveryPort = 39393
 
-    fun listen(context: Context, timeoutMs: Int = 10000): List<DiscoveredDevice> {
+    fun listen(context: Context, timeoutMs: Int = 3000): List<DiscoveredDevice> {
         val wifi = context.applicationContext
             .getSystemService(Context.WIFI_SERVICE) as WifiManager
         val lock = wifi.createMulticastLock("WireMoteDiscovery").apply {
@@ -29,18 +29,15 @@ object Discovery {
                 socket.broadcast = true
                 socket.bind(InetSocketAddress(discoveryPort))
                 socket.soTimeout = timeoutMs
-                DatagramSocket().use { probeSocket ->
-                    probeSocket.broadcast = true
-                    val probe = """{"service":"my-remote","version":1,"action":"discover"}"""
-                    val probeBytes = probe.toByteArray(Charsets.UTF_8)
-                    probeSocket.send(
-                        DatagramPacket(
-                            probeBytes,
-                            probeBytes.size,
-                            InetSocketAddress("255.255.255.255", discoveryPort),
-                        ),
+                val probe = """{"service":"my-remote","version":1,"action":"discover"}"""
+                val probeBytes = probe.toByteArray(Charsets.UTF_8)
+                socket.send(
+                    DatagramPacket(
+                        probeBytes,
+                        probeBytes.size,
+                        InetSocketAddress("255.255.255.255", discoveryPort),
                     )
-                }
+                )
                 val devices = linkedMapOf<String, DiscoveredDevice>()
                 val buffer = ByteArray(4096)
                 while (true) {
