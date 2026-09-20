@@ -55,14 +55,17 @@ async fn discovery_broadcast() {
             return;
         }
     };
-    let mac = std::fs::read_dir("/sys/class/net")
+    let mac = std::fs::read_to_string("/proc/net/route")
         .ok()
-        .into_iter()
-        .flatten()
-        .filter_map(Result::ok)
-        .filter(|entry| entry.file_name() != "lo")
-        .find_map(|entry| {
-            std::fs::read_to_string(entry.path().join("address"))
+        .and_then(|routes| {
+            routes.lines().skip(1).find_map(|line| {
+                let fields: Vec<_> = line.split_whitespace().collect();
+                (fields.get(1) == Some(&"00000000"))
+                    .then(|| fields.first().map(|interface| (*interface).to_string()))?
+            })
+        })
+        .and_then(|interface| {
+            std::fs::read_to_string(format!("/sys/class/net/{interface}/address"))
                 .ok()
                 .map(|address| address.trim().to_string())
                 .filter(|address| address.len() == 17 && address != "00:00:00:00:00:00")
