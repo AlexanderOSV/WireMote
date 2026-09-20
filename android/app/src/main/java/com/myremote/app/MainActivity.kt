@@ -175,6 +175,41 @@ private fun TrackpadView(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) { Text("Touch area") }
+        
+        Spacer(Modifier.height(8.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Button(
+                modifier = Modifier.weight(1f),
+                onClick = { client.send("mouse.click", JSONObject().apply { put("button", "left") }) }
+            ) {
+                Text("Left Click")
+            }
+            Button(
+                modifier = Modifier.weight(1f),
+                onClick = { client.send("mouse.click", JSONObject().apply { put("button", "right") }) }
+            ) {
+                Text("Right Click")
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        var keyboardText by remember { mutableStateOf("") }
+        TextField(
+            value = keyboardText,
+            onValueChange = { currentText ->
+                if (currentText.length > keyboardText.length) {
+                    val typedChar = currentText.last().toString()
+                    client.send("keyboard.type", JSONObject().put("key", typedChar))
+                } else if (currentText.length < keyboardText.length) {
+                    client.send("keyboard.press", JSONObject().put("key", "backspace"))
+                }
+                keyboardText = currentText
+            },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Type here to send keys...") },
+        )
+
+        Spacer(Modifier.height(12.dp))
         Text("Mouse sensitivity: %.1fx".format(sensitivity))
         Slider(value = sensitivity, onValueChange = onSensitivityChange, valueRange = 0.25f..3f)
         Button(onClick = { profile?.let(onWake) }, enabled = profile?.macAddress != null) { Text("Wake PC") }
