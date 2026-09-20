@@ -443,7 +443,7 @@ private fun ConnectionBar(
             onClick = {
                 if (connectionState == "Connected") onSleep() else profile?.let(onWake)
             },
-            enabled = connectionState == "Connected" || profile?.macAddress != null,
+            enabled = profile != null,
         ) {
             Icon(
                 imageVector = PowerSettingsNew,
@@ -1026,6 +1026,7 @@ private fun AddProfileView(
                             name = device.name,
                             host = device.host,
                             port = device.port,
+                            macAddress = device.macAddress,
                         ),
                     )
                 },

@@ -55,13 +55,25 @@ async fn discovery_broadcast() {
             return;
         }
     };
-    let name = std::env::var("HOSTNAME").unwrap_or_else(|_| "my-remote-pc".to_string());
+    let mac = std::fs::read_dir("/sys/class/net")
+        .ok()
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_name() != "lo")
+        .find_map(|entry| {
+            std::fs::read_to_string(entry.path().join("address"))
+                .ok()
+                .map(|address| address.trim().to_string())
+                .filter(|address| address.len() == 17 && address != "00:00:00:00:00:00")
+        });
     let advertisement = serde_json::json!({
         "service": "my-remote",
         "version": 1,
-        "name": name,
+        "name": "WireMote",
         "host": host,
         "port": 39394,
+        "mac": mac,
     }).to_string();
     let destination = SocketAddr::from(([255, 255, 255, 255], 39393));
     let mut interval = tokio::time::interval(Duration::from_secs(5));

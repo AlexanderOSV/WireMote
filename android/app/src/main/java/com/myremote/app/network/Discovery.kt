@@ -11,6 +11,7 @@ data class DiscoveredDevice(
     val name: String,
     val host: String,
     val port: Int,
+    val macAddress: String?,
 )
 
 object Discovery {
@@ -49,8 +50,9 @@ object Discovery {
                         val host = json.optString("host").ifBlank { packet.address.hostAddress.orEmpty() }
                         val port = json.optInt("port", 39394)
                         val name = json.optString("name").ifBlank { host }
+                        val macAddress = json.optString("mac").ifBlank { null }
                         if (host.isNotBlank() && port in 1..65535) {
-                            devices["$host:$port"] = DiscoveredDevice(name, host, port)
+                            devices["$host:$port"] = DiscoveredDevice(name, host, port, macAddress)
                         }
                     } catch (_: java.net.SocketTimeoutException) {
                         break
