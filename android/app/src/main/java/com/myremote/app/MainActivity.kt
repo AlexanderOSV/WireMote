@@ -191,6 +191,7 @@ private fun RemoteView(client: RemoteClient) {
             Button(onClick = { client.send("remote.play_pause") }) { Text("Play / Pause") }
         }
         Button(onClick = { client.send("remote.dpad", JSONObject().put("direction", "down")) }) { Text("Down") }
+        Button(onClick = { client.send("system.sleep") }) { Text("Sleep PC") }
     }
 }
 
