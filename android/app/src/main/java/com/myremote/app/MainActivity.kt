@@ -44,6 +44,7 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -51,7 +52,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
@@ -89,6 +93,7 @@ import com.myremote.app.network.WakeOnLan
 import com.myremote.app.ui.MyRemoteTheme
 import com.myremote.app.ui.icons.PowerSettingsNew
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -112,13 +117,15 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun RemoteApp() {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val store = remember { ProfileStore(context.applicationContext) }
-    val profiles by store.profiles.collectAsState(initial = emptyList())
+    val profiles by store.profiles.collectAsStateWithLifecycle(initialValue = emptyList())
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val client = remember { RemoteClient() }
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var selectedProfileId by rememberSaveable { mutableStateOf<String?>(null) }
     var connectionState by remember { mutableStateOf("Disconnected") }
+    var isVisible by remember { mutableStateOf(true) }
     val selectedProfile = profiles.firstOrNull { it.id == selectedProfileId } ?: profiles.firstOrNull()
 
     LaunchedEffect(profiles) {
@@ -140,22 +147,28 @@ private fun RemoteApp() {
                 object : WebSocketListener() {
                     override fun onOpen(webSocket: WebSocket, response: Response) {
                         Log.d("RemoteApp", "WebSocket connected successfully")
-                        scope.launch { connectionState = "Connected" }
-                        try {
-                            client.send("daemon.status")
-                        } catch (e: Exception) {
-                            Log.e("RemoteApp", "Error sending daemon status", e)
+                        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                            scope.launch { connectionState = "Connected" }
+                            try {
+                                client.send("daemon.status")
+                            } catch (e: Exception) {
+                                Log.e("RemoteApp", "Error sending daemon status", e)
+                            }
                         }
                     }
 
                     override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                         Log.d("RemoteApp", "WebSocket closed: $reason ($code)")
-                        scope.launch { connectionState = "Disconnected" }
+                        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                            scope.launch { connectionState = "Disconnected" }
+                        }
                     }
 
                     override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                         Log.e("RemoteApp", "WebSocket failure", t)
-                        scope.launch { connectionState = "Connection failed" }
+                        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                            scope.launch { connectionState = "Connection failed" }
+                        }
                     }
                 },
             )
@@ -175,8 +188,30 @@ private fun RemoteApp() {
         }
     }
 
-    LaunchedEffect(selectedProfile?.id) {
-        if (selectedProfile != null && connectionState == "Disconnected") {
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> {
+                    isVisible = false
+                    scope.coroutineContext.cancelChildren()
+                    client.close()
+                    connectionState = "Disconnected"
+                }
+
+                Lifecycle.Event.ON_START -> isVisible = true
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            scope.coroutineContext.cancelChildren()
+            client.close()
+        }
+    }
+
+    LaunchedEffect(isVisible, selectedProfile?.id) {
+        if (isVisible && selectedProfile != null && connectionState == "Disconnected") {
             connect()
         }
     }

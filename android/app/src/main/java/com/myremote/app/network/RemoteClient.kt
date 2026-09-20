@@ -8,14 +8,15 @@ import okhttp3.WebSocketListener
 import org.json.JSONObject
 
 class RemoteClient {
-    private val httpClient = OkHttpClient()
+    private var httpClient: OkHttpClient? = null
     private var socket: WebSocket? = null
 
     fun connect(host: String, port: Int, listener: WebSocketListener) {
         Log.d("RemoteClient", "Initiating WebSocket connection to $host:$port")
         val request = Request.Builder().url("ws://$host:$port/ws").build()
         socket = try {
-            httpClient.newWebSocket(request, listener)
+            val client = httpClient ?: OkHttpClient().also { httpClient = it }
+            client.newWebSocket(request, listener)
         } catch (e: Exception) {
             Log.e("RemoteClient", "Failed to create WebSocket request", e)
             throw e
@@ -34,7 +35,13 @@ class RemoteClient {
     @Suppress("unused")
     fun close() {
         Log.d("RemoteClient", "Closing WebSocket")
-        socket?.close(1000, "client closed")
+        socket?.cancel()
         socket = null
+        httpClient?.let { client ->
+            client.dispatcher.cancelAll()
+            client.dispatcher.executorService.shutdown()
+            client.connectionPool.evictAll()
+        }
+        httpClient = null
     }
 }

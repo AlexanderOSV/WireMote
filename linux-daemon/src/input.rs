@@ -96,7 +96,7 @@ pub fn remote_back() -> Result<(), String> {
 
 pub fn execute_command(command_id: &str) -> Result<(), String> {
     let (program, args): (&str, &[&str]) = match command_id {
-        "sleep" => ("systemctl", &["suspend"]),
+        "sleep" => ("systemctl", &["--ignore-inhibitors", "suspend"]),
         "lock" => ("loginctl", &["lock-session"]),
         "shutdown" => ("systemctl", &["poweroff"]),
         "reboot" => ("systemctl", &["reboot"]),
