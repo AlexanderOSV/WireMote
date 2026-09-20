@@ -1,5 +1,7 @@
 package com.myremote.app
 
+import android.graphics.Rect
+import android.graphics.Region
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -18,15 +20,18 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.TextField
@@ -44,14 +49,19 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.zIndex
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.asAndroidPath
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.border
@@ -59,7 +69,9 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
@@ -68,6 +80,7 @@ import com.myremote.app.data.RemoteProfile
 import com.myremote.app.network.RemoteClient
 import com.myremote.app.network.WakeOnLan
 import com.myremote.app.ui.MyRemoteTheme
+import com.myremote.app.ui.icons.PowerSettingsNew
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -156,12 +169,28 @@ private fun RemoteApp() {
                     profile = selectedProfile,
                     connectionState = connectionState,
                     client = client,
+                    onSleep = {
+                        client.send("system.sleep")
+                        connectionState = "Disconnected"
+                    },
                 ) { profile ->
                     scope.launch(Dispatchers.IO) {
                         profile.macAddress?.let { WakeOnLan.wake(it, profile.broadcastAddress) }
                     }
                 }
-                1 -> RemoteView(client)
+                1 -> RemoteView(
+                    profile = selectedProfile,
+                    connectionState = connectionState,
+                    client = client,
+                    onSleep = {
+                        client.send("system.sleep")
+                        connectionState = "Disconnected"
+                    },
+                ) { profile ->
+                    scope.launch(Dispatchers.IO) {
+                        profile.macAddress?.let { WakeOnLan.wake(it, profile.broadcastAddress) }
+                    }
+                }
                 2 -> ProfilesView(
                     profiles = profiles,
                     selectedProfileId = selectedProfile?.id,
@@ -192,41 +221,12 @@ private fun TrackpadView(
     profile: RemoteProfile?,
     connectionState: String,
     client: RemoteClient,
+    onSleep: () -> Unit,
     onWake: (RemoteProfile) -> Unit,
 ) {
     val sensitivity = profile?.mouseSensitivity ?: 1f
     Column {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                profile?.name ?: "No PC selected",
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Box(
-                Modifier
-                    .padding(start = 6.dp)
-                    .size(10.dp)
-                    .clip(CircleShape)
-                    .background(
-                        if (connectionState == "Connected") Color(0xFF4CAF50) else Color(0xFFF44336),
-                    ),
-            )
-            Spacer(Modifier.weight(1f))
-            IconButton(
-                onClick = { profile?.let(onWake) },
-                enabled = profile?.macAddress != null,
-            ) {
-                Text("⏻", style = MaterialTheme.typography.titleLarge)
-            }
-            IconButton(
-                onClick = { client.send("system.sleep") },
-                enabled = connectionState == "Connected",
-            ) {
-                Text("⏼", style = MaterialTheme.typography.titleLarge)
-            }
-        }
+        ConnectionBar(profile, connectionState, onSleep, onWake)
         Spacer(Modifier.height(12.dp))
         Row(
             Modifier
@@ -385,13 +385,52 @@ private fun TrackpadView(
 }
 
 @Composable
+private fun ConnectionBar(
+    profile: RemoteProfile?,
+    connectionState: String,
+    onSleep: () -> Unit,
+    onWake: (RemoteProfile) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            profile?.name ?: "No PC selected",
+            style = MaterialTheme.typography.titleMedium,
+        )
+        Box(
+            Modifier
+                .padding(start = 6.dp)
+                .size(10.dp)
+                .clip(CircleShape)
+                .background(
+                    if (connectionState == "Connected") Color(0xFF4CAF50) else Color(0xFFF44336),
+                ),
+        )
+        Spacer(Modifier.weight(1f))
+        IconButton(
+            onClick = {
+                if (connectionState == "Connected") onSleep() else profile?.let(onWake)
+            },
+            enabled = connectionState == "Connected" || profile?.macAddress != null,
+        ) {
+            Icon(
+                imageVector = PowerSettingsNew,
+                contentDescription = if (connectionState == "Connected") "Sleep" else "Wake",
+            )
+        }
+    }
+}
+
+@Composable
 private fun SettingsView(
     profile: RemoteProfile?,
     onSensitivityChange: (Float) -> Unit,
 ) {
     Column {
         Text("Settings", style = MaterialTheme.typography.headlineSmall)
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(12.dp))
         Text("Mouse sensitivity: %.1fx".format(profile?.mouseSensitivity ?: 1f))
         Slider(
             value = profile?.mouseSensitivity ?: 1f,
@@ -402,20 +441,83 @@ private fun SettingsView(
 }
 
 @Composable
-private fun RemoteView(client: RemoteClient) {
+private fun RemoteView(
+    profile: RemoteProfile?,
+    connectionState: String,
+    client: RemoteClient,
+    onSleep: () -> Unit,
+    onWake: (RemoteProfile) -> Unit,
+) {
+    var textFieldState by remember {
+        mutableStateOf(TextFieldValue(text = " ", selection = TextRange(1)))
+    }
+    val keyboardController = LocalSoftwareKeyboardController.current
+
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        HoldKeyButton(
-            client,
-            "ArrowUp",
-            "ArrowUp",
-            "↑",
+        ConnectionBar(profile, connectionState, onSleep, onWake)
+        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(72.dp))
+        Box(
             Modifier
-                .size(width = 150.dp, height = 96.dp)
-                .offset(y = 85.dp),
-            WedgeShape(WedgeDirection.Up),
-        )
+                .size(width = 300.dp, height = 172.dp)
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(
+                            requireUnconsumed = false,
+                            pass = PointerEventPass.Initial,
+                        )
+                        val direction = dpadDirection(down.position, size)
+                        if (direction == null) return@awaitEachGesture
+                        down.consume()
+                        val key = when (direction) {
+                            WedgeDirection.Up -> "ArrowUp"
+                            WedgeDirection.Down -> "ArrowDown"
+                            WedgeDirection.Left -> "ArrowLeft"
+                            WedgeDirection.Right -> "ArrowRight"
+                        }
+                        client.send("keyboard.key", JSONObject().apply {
+                            put("key", key)
+                            put("direction", "press")
+                        })
+                        try {
+                            var pressed = true
+                            while (pressed) {
+                                val event = withTimeoutOrNull(75) {
+                                    awaitPointerEvent(PointerEventPass.Initial)
+                                }
+                                if (event == null) {
+                                    client.send("keyboard.key", JSONObject().apply {
+                                        put("key", key)
+                                        put("direction", "press")
+                                    })
+                                } else {
+                                    pressed = event.changes.any { it.id == down.id && it.pressed }
+                                }
+                            }
+                        } finally {
+                            client.send("keyboard.key", JSONObject().apply {
+                                put("key", key)
+                                put("direction", "release")
+                            })
+                        }
+                    }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(Modifier.fillMaxSize()) {
+            HoldKeyButton(
+                client,
+                "ArrowUp",
+                "ArrowUp",
+                painterResource(com.myremote.app.R.drawable.keyboard_arrow_up_24),
+                Modifier
+                    .size(width = 150.dp, height = 96.dp)
+                    .align(Alignment.TopCenter),
+                WedgeShape(WedgeDirection.Up),
+            )
         Spacer(Modifier.height(0.dp))
         Row(
+            Modifier.align(Alignment.Center),
             horizontalArrangement = Arrangement.spacedBy(0.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -423,17 +525,25 @@ private fun RemoteView(client: RemoteClient) {
                 client,
                 "ArrowLeft",
                 "ArrowLeft",
-                "←",
+                painterResource(com.myremote.app.R.drawable.keyboard_arrow_left_24),
                 Modifier
                     .size(width = 96.dp, height = 150.dp)
                     .offset(x = 55.dp),
                 WedgeShape(WedgeDirection.Left),
             )
             Button(
-                modifier = Modifier.size(88.dp),
+                modifier = Modifier
+                    .size(88.dp)
+                    .zIndex(1f),
                 shape = CircleShape,
                 onClick = {
-                    client.send("keyboard.key", JSONObject().put("key", "Enter"))
+                    client.send(
+                        "keyboard.key",
+                        JSONObject().apply {
+                            put("key", "Enter")
+                            put("direction", "click")
+                        },
+                    )
                 },
             ) {
                 Text("OK", style = MaterialTheme.typography.titleMedium)
@@ -442,7 +552,7 @@ private fun RemoteView(client: RemoteClient) {
                 client,
                 "ArrowRight",
                 "ArrowRight",
-                "→",
+                painterResource(com.myremote.app.R.drawable.keyboard_arrow_right_24),
                 Modifier
                     .size(width = 96.dp, height = 150.dp)
                     .offset(x = (-55).dp),
@@ -454,31 +564,69 @@ private fun RemoteView(client: RemoteClient) {
             client,
             "ArrowDown",
             "ArrowDown",
-            "↓",
+            painterResource(com.myremote.app.R.drawable.keyboard_arrow_down_24),
             Modifier
                 .size(width = 150.dp, height = 96.dp)
-                .offset(y = (-85).dp),
+                .align(Alignment.BottomCenter),
             WedgeShape(WedgeDirection.Down),
         )
-        Spacer(Modifier.height(20.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(
-                modifier = Modifier.size(width = 112.dp, height = 56.dp),
-                shape = RoundedCornerShape(20.dp),
-                onClick = { client.send("remote.back") },
-            ) {
-                Text("←", style = MaterialTheme.typography.titleLarge)
-            }
-            Button(
-                modifier = Modifier.size(width = 160.dp, height = 56.dp),
-                shape = RoundedCornerShape(20.dp),
-                onClick = { client.send("remote.play_pause") },
-            ) {
-                Text("▶", style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.width(8.dp))
-                Text("Play / Pause")
             }
         }
+        Spacer(Modifier.height(20.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp),
+            horizontalArrangement = Arrangement.Start,
+        ) {
+            Button(
+                modifier = Modifier.size(56.dp),
+                shape = CircleShape,
+                contentPadding = PaddingValues(0.dp),
+                onClick = { client.send("remote.back") },
+            ) {
+                Icon(
+                    painter = painterResource(com.myremote.app.R.drawable.undo_24),
+                    contentDescription = "Back",
+                    modifier = Modifier.size(32.dp),
+                )
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        TextField(
+            value = textFieldState,
+            onValueChange = { newState ->
+                val currentText = newState.text
+                val oldText = textFieldState.text
+
+                if (currentText.contains("\n")) {
+                    client.send("keyboard.key", JSONObject().apply { put("key", "Enter") })
+                    keyboardController?.hide()
+                    textFieldState = TextFieldValue(text = " ", selection = TextRange(1))
+                } else if (currentText.length > oldText.length) {
+                    val typedText = currentText.substring(oldText.length)
+                    client.send("keyboard.text", JSONObject().apply { put("text", typedText) })
+                    textFieldState = TextFieldValue(text = " ", selection = TextRange(1))
+                } else if (currentText.length < oldText.length || currentText.isEmpty()) {
+                    client.send("keyboard.key", JSONObject().apply { put("key", "Backspace") })
+                    textFieldState = TextFieldValue(text = " ", selection = TextRange(1))
+                } else {
+                    textFieldState = newState
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Type here to send keys...") },
+            keyboardOptions = KeyboardOptions(
+                imeAction = ImeAction.Done,
+            ),
+            keyboardActions = KeyboardActions(
+                onDone = {
+                    client.send("keyboard.key", JSONObject().apply { put("key", "Enter") })
+                    keyboardController?.hide()
+                    textFieldState = TextFieldValue(text = " ", selection = TextRange(1))
+                },
+            ),
+        )
     }
 }
 
@@ -491,7 +639,23 @@ private fun RemoteView(client: RemoteClient) {
 @Composable
 private fun RemotePreview() {
     MyRemoteTheme {
-        RemoteView(RemoteClient())
+        RemoteView(null, "Disconnected", RemoteClient(), {}, {})
+    }
+}
+
+private fun dpadDirection(
+    point: androidx.compose.ui.geometry.Offset,
+    size: IntSize,
+): WedgeDirection? {
+    val centerX = size.width / 2f
+    val centerY = size.height / 2f
+    val dx = point.x - centerX
+    val dy = point.y - centerY
+    if (kotlin.math.abs(dx) < 48f && kotlin.math.abs(dy) < 42f) return null
+    return if (kotlin.math.abs(dx) > kotlin.math.abs(dy)) {
+        if (dx < 0f) WedgeDirection.Left else WedgeDirection.Right
+    } else {
+        if (dy < 0f) WedgeDirection.Up else WedgeDirection.Down
     }
 }
 
@@ -500,53 +664,52 @@ private fun HoldKeyButton(
     client: RemoteClient,
     label: String,
     key: String,
-    icon: String,
+    icon: Painter,
     modifier: Modifier,
-    shape: Shape,
+    shape: WedgeShape,
 ) {
-    Button(
-        onClick = {},
-        modifier = modifier
-            .pointerInput(key) {
-                awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false)
-                    down.consume()
-                    client.send(
-                        "keyboard.key",
-                        JSONObject().apply {
-                            put("key", key)
-                            put("direction", "press")
-                        },
-                    )
-                    try {
-                        var isPressed = true
-                        while (isPressed) {
-                            val event = withTimeoutOrNull(60) { awaitPointerEvent() }
-                            if (event == null) {
-                                client.send(
-                                    "keyboard.key",
-                                    JSONObject().apply {
-                                        put("key", key)
-                                        put("direction", "press")
-                                    },
-                                )
-                            } else {
-                                isPressed = event.changes.any { it.id == down.id && it.pressed }
-                            }
-                        }
-                    } finally {
-                        client.send(
-                            "keyboard.key",
-                            JSONObject().apply {
-                                put("key", key)
-                                put("direction", "release")
-                            },
-                        )
-                    }
-                }
-        },
+    Surface(
+        modifier = modifier,
         shape = shape,
-    ) { Text(icon, style = MaterialTheme.typography.headlineSmall) }
+        color = MaterialTheme.colorScheme.primary,
+        contentColor = MaterialTheme.colorScheme.onPrimary,
+    ) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .drawBehind {
+                    val hitboxPath = shape.path(Size(size.width, size.height))
+                    drawPath(
+                        path = hitboxPath,
+                        color = Color.Red.copy(alpha = 0.18f),
+                    )
+                    drawPath(
+                        path = hitboxPath,
+                        color = Color.Red,
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx()),
+                    )
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                painter = icon,
+                contentDescription = label,
+                modifier = Modifier.offset(
+                    x = when (key) {
+                        "ArrowLeft" -> (-40).dp
+                        "ArrowRight" -> 40.dp
+                        else -> 0.dp
+                    },
+                    y = when (key) {
+                        "ArrowUp" -> (-40).dp
+                        "ArrowDown" -> 40.dp
+                        else -> 0.dp
+                    },
+                ),
+                tint = MaterialTheme.colorScheme.onPrimary,
+            )
+        }
+    }
 }
 
 private enum class WedgeDirection {
@@ -559,11 +722,33 @@ private enum class WedgeDirection {
 private class WedgeShape(
     private val direction: WedgeDirection,
 ) : Shape {
+    fun contains(point: androidx.compose.ui.geometry.Offset, size: Size): Boolean {
+        val androidPath = createPath(size).asAndroidPath()
+        val bounds = android.graphics.RectF()
+        androidPath.computeBounds(bounds, true)
+        val clip = Region(
+            Rect(
+                bounds.left.toInt(),
+                bounds.top.toInt(),
+                bounds.right.toInt() + 1,
+                bounds.bottom.toInt() + 1,
+            ),
+        )
+        return Region().apply { setPath(androidPath, clip) }.contains(
+            point.x.toInt(),
+            point.y.toInt(),
+        )
+    }
+
     override fun createOutline(
         size: Size,
         layoutDirection: LayoutDirection,
         density: Density,
-    ): Outline {
+    ): Outline = Outline.Generic(createPath(size))
+
+    fun path(size: Size): Path = createPath(size)
+
+    private fun createPath(size: Size): Path {
         fun point(x: Float, y: Float): androidx.compose.ui.geometry.Offset =
             when (direction) {
                 WedgeDirection.Up -> androidx.compose.ui.geometry.Offset(x * size.width, y * size.height)
@@ -581,10 +766,10 @@ private class WedgeShape(
                 )
             }
 
-        val outerRadiusX = size.width * 0.46f
-        val outerRadiusY = size.height * 0.46f
-        val innerRadiusX = size.width * 0.16f
-        val innerRadiusY = size.height * 0.16f
+        val outerRadiusX = size.width * 0.50f
+        val outerRadiusY = size.height * 0.60f
+        val innerRadiusX = size.width * 0.28f
+        val innerRadiusY = size.height * 0.20f
         fun arcPoint(
             radiusX: Float,
             radiusY: Float,
@@ -598,7 +783,7 @@ private class WedgeShape(
         }
 
         val path = Path().apply {
-            // Start at the left side of the outer arc
+            // Keep the outer arc unchanged while extending the inner-facing edges.
             moveTo(
                 arcPoint(outerRadiusX, outerRadiusY, 220.0).x,
                 arcPoint(outerRadiusX, outerRadiusY, 220.0).y,
@@ -625,7 +810,7 @@ private class WedgeShape(
             // Left edge
             close()
         }
-        return Outline.Generic(path)
+        return path
     }
 }
 
