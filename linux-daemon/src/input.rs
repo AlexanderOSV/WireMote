@@ -87,7 +87,7 @@ pub fn remote_dpad(payload: &Value) -> Result<(), String> {
 }
 
 pub fn remote_select() -> Result<(), String> {
-    mouse_button(&serde_json::json!({ "button": "left" }))
+    keyboard_key("Enter", "click")
 }
 
 pub fn remote_back() -> Result<(), String> {
