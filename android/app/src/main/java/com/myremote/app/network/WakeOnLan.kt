@@ -10,7 +10,7 @@ object WakeOnLan {
         require(mac.size == 6) { "MAC address must contain six octets" }
         val packet = ByteArray(102)
         java.util.Arrays.fill(packet, 0, 6, 0xff.toByte())
-        repeat(16) { index -> mac.forEachIndexed { offset, value -> packet[6 + index * 6 + offset] = value } }
+        repeat(16) { index -> mac.forEachIndexed { offset, value -> packet[6 + (index * 6) + offset] = value } }
         DatagramSocket().use { socket ->
             socket.broadcast = true
             socket.send(DatagramPacket(packet, packet.size, InetAddress.getByName(broadcastAddress), 9))

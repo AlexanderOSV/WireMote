@@ -11,11 +11,11 @@ data class RemoteProfile(
     val macAddress: String? = null,
     val broadcastAddress: String = "255.255.255.255",
     val mouseSensitivity: Float = 1f,
-    val commands: List<RemoteCommand> = emptyList()
+    val commands: List<RemoteCommand> = emptyList(),
 )
 
 @Serializable
 data class RemoteCommand(
     val id: String,
-    val label: String
+    val label: String,
 )

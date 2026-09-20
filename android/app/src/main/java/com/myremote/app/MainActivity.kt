@@ -1,6 +1,7 @@
 package com.myremote.app
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -12,12 +13,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -32,7 +33,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.input.pointer.consume
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -55,6 +55,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun RemoteApp() {
     val context = LocalContext.current
@@ -64,11 +65,11 @@ private fun RemoteApp() {
     val client = remember { RemoteClient() }
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var selectedProfileId by rememberSaveable { mutableStateOf<String?>(null) }
-    var connectionState by rememberSaveable { mutableStateOf("Disconnected") }
+    var connectionState by remember { mutableStateOf("Disconnected") }
     val selectedProfile = profiles.firstOrNull { it.id == selectedProfileId } ?: profiles.firstOrNull()
 
     LaunchedEffect(profiles) {
-        if (selectedProfileId == null && profiles.isNotEmpty()) selectedProfileId = profiles.first().id
+        if ((selectedProfileId == null) && profiles.isNotEmpty()) selectedProfileId = profiles.first().id
     }
 
     fun saveProfile(updated: RemoteProfile) {
@@ -77,21 +78,38 @@ private fun RemoteApp() {
 
     fun connect() {
         val profile = selectedProfile ?: return
+        Log.d("RemoteApp", "Connecting to ${profile.host}:${profile.port}")
         connectionState = "Connecting..."
-        client.connect(profile.host, profile.port, object : WebSocketListener() {
-            override fun onOpen(webSocket: WebSocket, response: Response) {
-                connectionState = "Connected"
-                client.send("daemon.status")
-            }
+        try {
+            client.connect(
+                profile.host,
+                profile.port,
+                object : WebSocketListener() {
+                    override fun onOpen(webSocket: WebSocket, response: Response) {
+                        Log.d("RemoteApp", "WebSocket connected successfully")
+                        scope.launch { connectionState = "Connected" }
+                        try {
+                            client.send("daemon.status")
+                        } catch (e: Exception) {
+                            Log.e("RemoteApp", "Error sending daemon status", e)
+                        }
+                    }
 
-            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                connectionState = "Disconnected"
-            }
+                    override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                        Log.d("RemoteApp", "WebSocket closed: $reason ($code)")
+                        scope.launch { connectionState = "Disconnected" }
+                    }
 
-            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                connectionState = "Connection failed"
-            }
-        })
+                    override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                        Log.e("RemoteApp", "WebSocket failure", t)
+                        scope.launch { connectionState = "Connection failed" }
+                    }
+                },
+            )
+        } catch (e: Exception) {
+            Log.e("RemoteApp", "Exception in connect method", e)
+            connectionState = "Connection failed"
+        }
     }
 
     Scaffold(topBar = { TopAppBar(title = { Text("My Remote") }) }) { padding ->
@@ -107,12 +125,11 @@ private fun RemoteApp() {
                     connectionState = connectionState,
                     client = client,
                     onSensitivityChange = { updated -> selectedProfile?.let { saveProfile(it.copy(mouseSensitivity = updated)) } },
-                    onWake = { profile ->
-                        scope.launch(Dispatchers.IO) {
-                            profile.macAddress?.let { WakeOnLan.wake(it, profile.broadcastAddress) }
-                        }
+                ) { profile ->
+                    scope.launch(Dispatchers.IO) {
+                        profile.macAddress?.let { WakeOnLan.wake(it, profile.broadcastAddress) }
                     }
-                )
+                }
                 1 -> RemoteView(client)
                 else -> ProfilesView(
                     profiles = profiles,
@@ -120,8 +137,7 @@ private fun RemoteApp() {
                     connectionState = connectionState,
                     onSelect = { selectedProfileId = it },
                     onConnect = ::connect,
-                    onAdd = { profile -> scope.launch { store.saveProfiles(profiles + profile) } }
-                )
+                ) { profile -> scope.launch { store.saveProfiles(profiles + profile) } }
             }
         }
     }
@@ -133,7 +149,7 @@ private fun TrackpadView(
     connectionState: String,
     client: RemoteClient,
     onSensitivityChange: (Float) -> Unit,
-    onWake: (RemoteProfile) -> Unit
+    onWake: (RemoteProfile) -> Unit,
 ) {
     val sensitivity = profile?.mouseSensitivity ?: 1f
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -147,14 +163,17 @@ private fun TrackpadView(
                 .pointerInput(sensitivity) {
                     detectDragGestures { change, dragAmount ->
                         change.consume()
-                        client.send("mouse.move", JSONObject().apply {
-                            put("dx", dragAmount.x * sensitivity)
-                            put("dy", dragAmount.y * sensitivity)
-                        })
+                        client.send(
+                            "mouse.move",
+                            JSONObject().apply {
+                                put("dx", dragAmount.x * sensitivity)
+                                put("dy", dragAmount.y * sensitivity)
+                            },
+                        )
                     }
                 },
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            verticalArrangement = Arrangement.Center,
         ) { Text("Touch area") }
         Text("Mouse sensitivity: %.1fx".format(sensitivity))
         Slider(value = sensitivity, onValueChange = onSensitivityChange, valueRange = 0.25f..3f)
@@ -182,7 +201,7 @@ private fun ProfilesView(
     connectionState: String,
     onSelect: (String) -> Unit,
     onConnect: () -> Unit,
-    onAdd: (RemoteProfile) -> Unit
+    onAdd: (RemoteProfile) -> Unit,
 ) {
     var name by remember { mutableStateOf("") }
     var host by remember { mutableStateOf("") }
@@ -200,13 +219,22 @@ private fun ProfilesView(
         TextField(value = name, onValueChange = { name = it }, label = { Text("PC name") })
         TextField(value = host, onValueChange = { host = it }, label = { Text("IP address") })
         TextField(value = mac, onValueChange = { mac = it }, label = { Text("MAC address (optional)") })
-        Button(onClick = {
-            if (name.isNotBlank() && host.isNotBlank()) {
-                onAdd(RemoteProfile(UUID.randomUUID().toString(), name, host, macAddress = mac.ifBlank { null }))
-                name = ""
-                host = ""
-                mac = ""
-            }
-        }) { Text("Add PC") }
+        Button(
+            onClick = {
+                if (name.isNotBlank() && host.isNotBlank()) {
+                    onAdd(
+                        RemoteProfile(
+                            id = UUID.randomUUID().toString(),
+                            name = name,
+                            host = host,
+                            macAddress = mac.ifBlank { null },
+                        ),
+                    )
+                    name = ""
+                    host = ""
+                    mac = ""
+                }
+            },
+        ) { Text("Add PC") }
     }
 }

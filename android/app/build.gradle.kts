@@ -16,6 +16,15 @@ android {
         versionCode = 1
         versionName = "0.1"
     }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_22
+        targetCompatibility = JavaVersion.VERSION_22
+    }
+    @Suppress("DEPRECATION")
+    kotlinOptions {
+        jvmTarget = "22"
+    }
 }
 
 dependencies {

@@ -6,7 +6,8 @@
     <application
         android:theme="@style/Theme.MyRemote"
         android:label="My Remote"
-        android:allowBackup="true">
+        android:allowBackup="true"
+        android:usesCleartextTraffic="true">
         <activity
             android:name=".MainActivity"
             android:exported="true">
