@@ -5,7 +5,9 @@
 
     <application
         android:theme="@style/Theme.MyRemote"
-        android:label="My Remote"
+        android:label="WireMote"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:allowBackup="true"
         android:usesCleartextTraffic="true">
         <activity
