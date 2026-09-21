@@ -24,7 +24,7 @@ code to install and use the prebuilt APK.
 
 ### Android app
 
-1. Download the prebuilt [`app-release.apk`](app-release.apk) from the project's
+1. Download the prebuilt [app-release.apk](https://github.com/AlexanderOSV/WireMote/releases/tag/Release) from the project's
    release page.
 2. Connect the Android phone to the computer with a USB cable, unlock the
    phone, and select **File transfer** or **MTP** when Android asks how to use
