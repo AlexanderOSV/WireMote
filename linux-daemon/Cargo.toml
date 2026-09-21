@@ -2,7 +2,7 @@
 name = "my-remote-daemon"
 version = "0.1.0"
 edition = "2021"
-description = "Linux daemon for the My Remote Android controller"
+description = "Linux daemon for the WireMote Android controller"
 
 [dependencies]
 axum = { version = "0.7", features = ["ws"] }

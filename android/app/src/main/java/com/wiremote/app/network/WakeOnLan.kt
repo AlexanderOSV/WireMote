@@ -1,4 +1,4 @@
-package com.myremote.app.network
+package com.wiremote.app.network
 
 import java.net.DatagramPacket
 import java.net.DatagramSocket

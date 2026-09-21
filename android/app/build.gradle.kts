@@ -8,7 +8,7 @@ plugins {
 }
 
 android {
-    namespace = "com.myremote.app"
+    namespace = "com.wiremote.app"
     compileSdk = 35
 
     compileOptions {
@@ -23,7 +23,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.myremote.app"
+        applicationId = "com.wiremote.app"
         minSdk = 26
         targetSdk = 35
         versionCode = 1

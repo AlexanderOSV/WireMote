@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://example.invalid/my-remote/protocol/0.1/schema.json",
-  "title": "My Remote message envelope",
+  "title": "WireMote message envelope",
   "type": "object",
   "required": ["type"],
   "properties": {

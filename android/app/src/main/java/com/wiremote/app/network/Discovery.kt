@@ -1,4 +1,4 @@
-package com.myremote.app.network
+package com.wiremote.app.network
 
 import android.content.Context
 import android.net.wifi.WifiManager

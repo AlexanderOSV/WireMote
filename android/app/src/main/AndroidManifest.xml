@@ -4,7 +4,7 @@
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
     <application
-        android:theme="@style/Theme.MyRemote"
+        android:theme="@style/Theme.WireMote"
         android:label="WireMote"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"

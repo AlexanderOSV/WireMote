@@ -1,11 +1,11 @@
-package com.myremote.app.ui
+package com.wiremote.app.ui
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-private val MyRemoteDarkColors = darkColorScheme(
+private val WireMoteDarkColors = darkColorScheme(
     primary = Color(0xFF9CCBFF),
     onPrimary = Color(0xFF003258),
     primaryContainer = Color(0xFF174A73),
@@ -24,9 +24,9 @@ private val MyRemoteDarkColors = darkColorScheme(
 )
 
 @Composable
-fun MyRemoteTheme(content: @Composable () -> Unit) {
+fun WireMoteTheme(content: @Composable () -> Unit) {
     MaterialTheme(
-        colorScheme = MyRemoteDarkColors,
+        colorScheme = WireMoteDarkColors,
         content = content,
     )
 }

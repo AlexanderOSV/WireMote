@@ -1,4 +1,4 @@
-package com.myremote.app.data
+package com.wiremote.app.data
 
 import android.content.Context
 import androidx.datastore.preferences.core.Preferences

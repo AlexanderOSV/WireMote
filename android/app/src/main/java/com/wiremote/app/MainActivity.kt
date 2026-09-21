@@ -1,4 +1,4 @@
-package com.myremote.app
+package com.wiremote.app
 
 import android.graphics.Rect
 import android.graphics.Region
@@ -84,14 +84,14 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
-import com.myremote.app.data.ProfileStore
-import com.myremote.app.data.RemoteProfile
-import com.myremote.app.network.RemoteClient
-import com.myremote.app.network.DiscoveredDevice
-import com.myremote.app.network.Discovery
-import com.myremote.app.network.WakeOnLan
-import com.myremote.app.ui.MyRemoteTheme
-import com.myremote.app.ui.icons.PowerSettingsNew
+import com.wiremote.app.data.ProfileStore
+import com.wiremote.app.data.RemoteProfile
+import com.wiremote.app.network.RemoteClient
+import com.wiremote.app.network.DiscoveredDevice
+import com.wiremote.app.network.Discovery
+import com.wiremote.app.network.WakeOnLan
+import com.wiremote.app.ui.WireMoteTheme
+import com.wiremote.app.ui.icons.PowerSettingsNew
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.delay
@@ -109,7 +109,7 @@ import kotlin.math.sin
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { MyRemoteTheme { RemoteApp() } }
+        setContent { WireMoteTheme { RemoteApp() } }
     }
 }
 
@@ -224,19 +224,19 @@ private fun RemoteApp() {
             ) {
                 IconButton(onClick = { selectedTab = 0 }) {
                     Icon(
-                        painter = painterResource(com.myremote.app.R.drawable.mouse_24),
+                        painter = painterResource(com.wiremote.app.R.drawable.mouse_24),
                         contentDescription = "Trackpad",
                     )
                 }
                 IconButton(onClick = { selectedTab = 1 }) {
                     Icon(
-                        painter = painterResource(com.myremote.app.R.drawable.tv_remote_24),
+                        painter = painterResource(com.wiremote.app.R.drawable.tv_remote_24),
                         contentDescription = "Remote",
                     )
                 }
                 IconButton(onClick = { selectedTab = 2 }) {
                     Icon(
-                        painter = painterResource(com.myremote.app.R.drawable.settings_24),
+                        painter = painterResource(com.wiremote.app.R.drawable.settings_24),
                         contentDescription = "Settings",
                     )
                 }
@@ -629,7 +629,7 @@ private fun RemoteView(
                 client,
                 "ArrowUp",
                 "ArrowUp",
-                painterResource(com.myremote.app.R.drawable.keyboard_arrow_up_24),
+                painterResource(com.wiremote.app.R.drawable.keyboard_arrow_up_24),
                 Modifier
                     .size(width = 150.dp, height = 96.dp)
                     .align(Alignment.TopCenter),
@@ -645,7 +645,7 @@ private fun RemoteView(
                 client,
                 "ArrowLeft",
                 "ArrowLeft",
-                painterResource(com.myremote.app.R.drawable.keyboard_arrow_left_24),
+                painterResource(com.wiremote.app.R.drawable.keyboard_arrow_left_24),
                 Modifier
                     .size(width = 96.dp, height = 150.dp)
                     .offset(x = 55.dp),
@@ -672,7 +672,7 @@ private fun RemoteView(
                 client,
                 "ArrowRight",
                 "ArrowRight",
-                painterResource(com.myremote.app.R.drawable.keyboard_arrow_right_24),
+                painterResource(com.wiremote.app.R.drawable.keyboard_arrow_right_24),
                 Modifier
                     .size(width = 96.dp, height = 150.dp)
                     .offset(x = (-55).dp),
@@ -684,7 +684,7 @@ private fun RemoteView(
             client,
             "ArrowDown",
             "ArrowDown",
-            painterResource(com.myremote.app.R.drawable.keyboard_arrow_down_24),
+            painterResource(com.wiremote.app.R.drawable.keyboard_arrow_down_24),
             Modifier
                 .size(width = 150.dp, height = 96.dp)
                 .align(Alignment.BottomCenter),
@@ -706,7 +706,7 @@ private fun RemoteView(
                 onClick = { client.send("remote.back") },
             ) {
                 Icon(
-                    painter = painterResource(com.myremote.app.R.drawable.undo_24),
+                    painter = painterResource(com.wiremote.app.R.drawable.undo_24),
                     contentDescription = "Back",
                     modifier = Modifier.size(32.dp),
                 )
@@ -758,7 +758,7 @@ private fun RemoteView(
 )
 @Composable
 private fun RemotePreview() {
-    MyRemoteTheme {
+    WireMoteTheme {
         RemoteView(null, "Disconnected", RemoteClient())
     }
 }

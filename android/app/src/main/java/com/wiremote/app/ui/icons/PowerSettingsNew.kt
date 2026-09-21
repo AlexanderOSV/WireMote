@@ -1,4 +1,4 @@
-package com.myremote.app.ui.icons
+package com.wiremote.app.ui.icons
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathFillType

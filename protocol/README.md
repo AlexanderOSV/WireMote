@@ -1,4 +1,4 @@
-# My Remote Protocol
+# WireMote Protocol
 
 Protocol version: `0.1`
 
